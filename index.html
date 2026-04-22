@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ToDo アプリ</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+    <header class="app-header">
+        <h1>ToDo アプリ</h1>
+    </header>
+
+    <main class="app-main">
+        <section class="task-form-section" aria-labelledby="form-heading">
+            <h2 id="form-heading" class="sr-only">タスク入力</h2>
+            <form id="task-form" class="task-form" autocomplete="off" novalidate>
+                <div class="form-row form-row--title">
+                    <label for="title-input">タイトル</label>
+                    <input id="title-input" name="title" type="text" maxlength="200" required />
+                </div>
+                <div class="form-row">
+                    <label for="due-input">期限</label>
+                    <input id="due-input" name="dueDate" type="date" />
+                </div>
+                <div class="form-row">
+                    <label for="priority-select">優先度</label>
+                    <select id="priority-select" name="priority">
+                        <option value="high">高</option>
+                        <option value="medium" selected>中</option>
+                        <option value="low">低</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="tags-input">タグ</label>
+                    <input id="tags-input" name="tags" type="text" placeholder="カンマ区切り 例: 仕事, 急ぎ" />
+                </div>
+                <div class="form-actions">
+                    <button type="submit">追加</button>
+                    <button type="button" id="cancel-edit" hidden>キャンセル</button>
+                </div>
+                <p id="form-error" class="form-error" role="alert"></p>
+            </form>
+        </section>
+
+        <section class="task-filter-section" aria-labelledby="filter-heading">
+            <h2 id="filter-heading" class="sr-only">絞り込み</h2>
+            <div class="filter-row">
+                <label for="search-input">検索</label>
+                <input id="search-input" type="search" placeholder="タイトル / タグで部分一致検索" />
+                <label for="status-filter">ステータス</label>
+                <select id="status-filter">
+                    <option value="all" selected>すべて</option>
+                    <option value="active">未完了</option>
+                    <option value="completed">完了</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="task-list-section" aria-labelledby="list-heading">
+            <h2 id="list-heading" class="sr-only">タスク一覧</h2>
+            <ul id="task-list" class="task-list"></ul>
+        </section>
+    </main>
+
+    <script type="module">
+        import { init } from "./src/main.js";
+        init();
+    </script>
+</body>
+</html>
