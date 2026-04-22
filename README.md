@@ -3,6 +3,12 @@
 Vanilla HTML / CSS / JavaScript 製のシンプルな ToDo アプリ。
 外部ライブラリとビルドツールを一切使わず、静的ファイルだけで動作する。
 
+## 公開 URL
+
+<https://yoshizawakyo-art.github.io/futsal-search-portal/>
+
+`main` ブランチに push すると GitHub Pages が自動でデプロイする。
+
 ## 機能（MVP）
 
 - タスクの追加 / 編集 / 削除 / 完了トグル
