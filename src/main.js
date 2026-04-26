@@ -12,6 +12,9 @@ import
     parseTags
 } from "./tasks.js";
 import { applyFilters, sortTasks } from "./filters.js";
+import { parseNaturalInput } from "./parser.js";
+import { recommendNext } from "./recommend.js";
+import { groupByCompletionDate, buildMonthlyHeatmap } from "./journal.js";
 import
 {
     renderList,
@@ -26,11 +29,16 @@ import
     updateProgress,
     updateDateDisplay,
     updateFilterChips,
-    showCompletionEffect
+    showCompletionEffect,
+    showView,
+    renderInputPreview,
+    renderNowMode,
+    renderJournal
 } from "./ui.js";
 import
 {
     STATUS_FILTER,
+    VIEW,
     MESSAGES,
     PRIORITY
 } from "./common/constants.js";
@@ -43,6 +51,8 @@ const state =
 {
     tasks: [],
     editingId: null,
+    view: VIEW.TODAY,
+    nowSkipped: new Set(),
     filters:
     {
         query: "",
@@ -66,19 +76,25 @@ export function init()
     const submitBtn = form.querySelector('button[type="submit"]');
     const errorBox = document.getElementById("form-error");
     const titleInput = document.getElementById("title-input");
+    const previewEl = document.getElementById("input-preview");
 
     updateDateDisplay();
 
     form.addEventListener("submit", function onSubmit(event)
     {
         event.preventDefault();
-        handleSubmit(form, submitBtn, cancelBtn, errorBox);
+        const succeeded = handleSubmit(form, submitBtn, cancelBtn, errorBox);
+        if (succeeded)
+        {
+            renderInputPreview(previewEl, emptyParsed());
+        }
         refresh(list);
     });
 
     cancelBtn.addEventListener("click", function onCancelEdit()
     {
         cancelEditing(form, submitBtn, cancelBtn, errorBox);
+        renderInputPreview(previewEl, emptyParsed());
     });
 
     searchInput.addEventListener("input", function onSearchInput(event)
@@ -90,6 +106,12 @@ export function init()
     titleInput.addEventListener("focus", function onTitleFocus()
     {
         openFormDetails();
+    });
+
+    titleInput.addEventListener("input", function onTitleInput()
+    {
+        const parsed = parseNaturalInput(titleInput.value, new Date());
+        renderInputPreview(previewEl, parsed);
     });
 
     setupFilterChips(list);
@@ -203,24 +225,25 @@ function setupNavigation(list)
     {
         item.addEventListener("click", function onNavClick()
         {
-            navItems.forEach(function(nav)
-            {
-                nav.classList.remove("nav-item--active");
-            });
-            item.classList.add("nav-item--active");
-
             const view = item.dataset.view;
-            if (view === "today")
+            state.view = view;
+
+            if (view === VIEW.TODAY)
             {
                 state.filters.status = STATUS_FILTER.ACTIVE;
             }
-            else if (view === "completed")
+            else if (view === VIEW.COMPLETED)
             {
                 state.filters.status = STATUS_FILTER.COMPLETED;
             }
-            else
+            else if (view === VIEW.ALL)
             {
                 state.filters.status = STATUS_FILTER.ALL;
+            }
+
+            if (view === VIEW.NOW)
+            {
+                state.nowSkipped = new Set();
             }
 
             updateFilterChips(state.filters.status);
@@ -231,12 +254,13 @@ function setupNavigation(list)
 
 /**
  * フォーム送信の処理。新規追加 or 更新を editingId に応じて分岐。
+ * 自然言語パース結果を form 値とマージして最終フィールドを決める。
  *
  * @param {HTMLFormElement} form 対象フォーム。
  * @param {HTMLElement} submitBtn 送信ボタン。
  * @param {HTMLElement} cancelBtn キャンセルボタン。
  * @param {HTMLElement} errorBox バリデーションエラー表示領域。
- * @returns {void}
+ * @returns {boolean} 送信が成功して form を reset したら true、エラー時は false。
  */
 function handleSubmit(form, submitBtn, cancelBtn, errorBox)
 {
@@ -244,22 +268,19 @@ function handleSubmit(form, submitBtn, cancelBtn, errorBox)
     errorBox.textContent = "";
     try
     {
+        const merged = mergeFormAndParsed(raw);
+
         if (state.editingId === null)
         {
-            state.tasks = state.tasks.concat(createTask({
-                title: raw.title,
-                dueDate: raw.dueDate,
-                priority: raw.priority,
-                tags: parseTags(raw.tags)
-            }));
+            state.tasks = state.tasks.concat(createTask(merged));
         }
         else
         {
             state.tasks = updateTask(state.tasks, state.editingId, {
-                title: raw.title.trim(),
-                dueDate: raw.dueDate,
-                priority: raw.priority,
-                tags: parseTags(raw.tags)
+                title: merged.title,
+                dueDate: merged.dueDate,
+                priority: merged.priority,
+                tags: merged.tags
             });
             state.editingId = null;
             setCancelVisible(cancelBtn, false);
@@ -267,11 +288,73 @@ function handleSubmit(form, submitBtn, cancelBtn, errorBox)
         }
         persist();
         resetForm(form);
+        return true;
     }
     catch (error)
     {
         errorBox.textContent = error.message;
+        return false;
     }
+}
+
+/**
+ * raw フォーム値を自然言語パース結果とマージし、最終的なタスク入力値を返す。
+ * パース結果が非 null/非空 ならそちらを優先、無ければフォーム値を使う。
+ * タグはパース結果と form のタグを重複排除しつつ結合する。
+ *
+ * @param {{title: string, dueDate: string|null, priority: string, tags: string}} raw readFormValues の戻り値。
+ * @returns {{title: string, dueDate: string|null, priority: string, tags: string[]}} createTask に渡せる形。
+ */
+function mergeFormAndParsed(raw)
+{
+    const parsed = parseNaturalInput(raw.title, new Date());
+    const formTags = parseTags(raw.tags);
+    return {
+        title: parsed.title || raw.title.trim(),
+        dueDate: parsed.dueDate || raw.dueDate || null,
+        priority: parsed.priority || raw.priority || PRIORITY.MEDIUM,
+        tags: mergeTags(parsed.tags, formTags)
+    };
+}
+
+/**
+ * 2つのタグ配列を順序を保ちつつ重複排除して結合する。
+ *
+ * @param {string[]} a 先に並べる配列。
+ * @param {string[]} b 後に並べる配列。
+ * @returns {string[]} 重複排除済みの結合配列。
+ */
+function mergeTags(a, b)
+{
+    const seen = new Set();
+    const result = [];
+    for (const t of a)
+    {
+        if (!seen.has(t))
+        {
+            seen.add(t);
+            result.push(t);
+        }
+    }
+    for (const t of b)
+    {
+        if (!seen.has(t))
+        {
+            seen.add(t);
+            result.push(t);
+        }
+    }
+    return result;
+}
+
+/**
+ * 入力プレビューに渡す「空」のパース結果。
+ *
+ * @returns {{title: string, dueDate: null, tags: string[], priority: null}} 空のパース結果。
+ */
+function emptyParsed()
+{
+    return { title: "", dueDate: null, tags: [], priority: null };
 }
 
 /**
@@ -297,6 +380,8 @@ function startEditing(id)
     setFormValues(form, target);
     setSubmitLabel(submitBtn, true);
     setCancelVisible(cancelBtn, true);
+    const previewEl = document.getElementById("input-preview");
+    renderInputPreview(previewEl, emptyParsed());
     form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -367,6 +452,47 @@ function handleDelete(id)
 }
 
 /**
+ * 「今これ」モードでの完了処理。skip セットをリセットして次の候補が出るようにする。
+ *
+ * @param {string} id 完了するタスクの id。
+ * @returns {void}
+ */
+function handleNowComplete(id)
+{
+    state.tasks = toggleComplete(state.tasks, id);
+    state.nowSkipped = new Set();
+    persist();
+    refresh(document.getElementById("task-list"));
+}
+
+/**
+ * 「今これ」モードでのスキップ処理。次回推薦から除外する。
+ *
+ * @param {string} id スキップするタスクの id。
+ * @returns {void}
+ */
+function handleNowSkip(id)
+{
+    state.nowSkipped.add(id);
+    refresh(document.getElementById("task-list"));
+}
+
+/**
+ * 「今これ」モードからの編集要求。リストビューに切替えてから編集を開始する。
+ *
+ * @param {string} id 編集対象の id。
+ * @returns {void}
+ */
+function handleNowEdit(id)
+{
+    state.view = VIEW.TODAY;
+    state.filters.status = STATUS_FILTER.ACTIVE;
+    updateFilterChips(state.filters.status);
+    refresh(document.getElementById("task-list"));
+    startEditing(id);
+}
+
+/**
  * state.tasks を localStorage に保存する薄いラッパ。
  *
  * @returns {void}
@@ -377,20 +503,47 @@ function persist()
 }
 
 /**
- * 現在の state に基づきタスクリストを再描画する。
+ * 現在の state に基づき表示を再描画する。view に応じて分岐する。
  *
  * @param {HTMLElement} list タスクリストのコンテナ要素。
  * @returns {void}
  */
 function refresh(list)
 {
-    const filtered = applyFilters(state.tasks, state.filters);
-    const sorted = sortTasks(filtered);
-    renderList(list, sorted, state.tasks.length > 0, {
-        onToggle: handleToggle,
-        onEdit: startEditing,
-        onDelete: handleDelete
-    });
+    showView(state.view);
+
+    if (state.view === VIEW.NOW)
+    {
+        const container = document.getElementById("now-mode-container");
+        const candidates = state.tasks.filter(function(t)
+        {
+            return !state.nowSkipped.has(t.id);
+        });
+        const next = recommendNext(candidates, new Date());
+        renderNowMode(container, next, {
+            onComplete: handleNowComplete,
+            onSkip: handleNowSkip,
+            onEdit: handleNowEdit
+        });
+    }
+    else if (state.view === VIEW.JOURNAL)
+    {
+        const container = document.getElementById("journal-container");
+        const today = new Date();
+        const groups = groupByCompletionDate(state.tasks, today, 30);
+        const heatmap = buildMonthlyHeatmap(state.tasks, today, 4);
+        renderJournal(container, groups, heatmap);
+    }
+    else
+    {
+        const filtered = applyFilters(state.tasks, state.filters);
+        const sorted = sortTasks(filtered);
+        renderList(list, sorted, state.tasks.length > 0, {
+            onToggle: handleToggle,
+            onEdit: startEditing,
+            onDelete: handleDelete
+        });
+    }
 
     const completed = state.tasks.filter(function(t) { return t.completed; }).length;
     updateProgress(completed, state.tasks.length);

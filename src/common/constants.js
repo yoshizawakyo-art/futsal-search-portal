@@ -7,7 +7,12 @@
  * localStorage に書き込むときのキー。
  * スキーマ変更時はサフィックスを v2, v3 と更新する。
  */
-export const STORAGE_KEY = "todo-app/tasks/v1";
+export const STORAGE_KEY = "todo-app/tasks/v2";
+
+/**
+ * 旧スキーマのキー。マイグレーション時の読み出しにのみ使用する。
+ */
+export const STORAGE_KEY_V1 = "todo-app/tasks/v1";
 
 /**
  * 優先度の取りうる値。
@@ -50,6 +55,18 @@ export const STATUS_FILTER =
 };
 
 /**
+ * メインビューの取りうる値。サイドバーのナビと対応する。
+ */
+export const VIEW =
+{
+    TODAY: "today",
+    ALL: "all",
+    COMPLETED: "completed",
+    NOW: "now",
+    JOURNAL: "journal"
+};
+
+/**
  * 入力制約: タイトルの最大長。
  */
 export const MAX_TITLE_LENGTH = 200;
@@ -73,5 +90,7 @@ export const MESSAGES =
     EMPTY_FILTERED: "条件に一致するタスクがありません。",
     CONFIRM_DELETE: "このタスクを削除しますか？",
     ERROR_TITLE_REQUIRED: "タイトルを入力してください。",
-    ERROR_TITLE_TOO_LONG: `タイトルは ${MAX_TITLE_LENGTH} 文字以内で入力してください。`
+    ERROR_TITLE_TOO_LONG: `タイトルは ${MAX_TITLE_LENGTH} 文字以内で入力してください。`,
+    NOW_EMPTY: "いま手をつけるタスクはありません。\nひと息ついて、新しい一行を書きましょう。",
+    JOURNAL_EMPTY: "まだ達成の記録がありません。\nひとつ完了したら、ここにスタンプが押されます。"
 };

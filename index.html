@@ -36,6 +36,16 @@
                     <span class="nav-label">完了済み</span>
                     <span class="nav-hint">Done</span>
                 </button>
+                <button type="button" class="nav-item" data-view="now">
+                    <span class="nav-icon">&#9728;</span>
+                    <span class="nav-label">今これ</span>
+                    <span class="nav-hint">Now</span>
+                </button>
+                <button type="button" class="nav-item" data-view="journal">
+                    <span class="nav-icon">&#9733;</span>
+                    <span class="nav-label">達成</span>
+                    <span class="nav-hint">Journal</span>
+                </button>
             </nav>
 
             <div class="sidebar-progress">
@@ -84,8 +94,9 @@
                         <form id="task-form" class="task-form" autocomplete="off" novalidate>
                             <div class="form-main-row">
                                 <span class="form-icon">+</span>
-                                <input id="title-input" name="title" type="text" maxlength="200" placeholder="ここに書き足す..." required />
+                                <input id="title-input" name="title" type="text" maxlength="200" placeholder="例: 明日 牛乳買う #買い物 !!" required />
                             </div>
+                            <div id="input-preview" class="input-preview" hidden></div>
                             <div class="form-details" id="form-details">
                                 <div class="form-row">
                                     <label for="due-input">期限</label>
@@ -117,9 +128,19 @@
                         </form>
                     </section>
 
-                    <section class="task-list-section" aria-labelledby="list-heading">
+                    <section class="task-list-section" id="task-list-section" aria-labelledby="list-heading">
                         <h2 id="list-heading" class="sr-only">タスク一覧</h2>
                         <ul id="task-list" class="task-list"></ul>
+                    </section>
+
+                    <section class="now-mode-section" id="now-mode-section" aria-labelledby="now-heading" hidden>
+                        <h2 id="now-heading" class="sr-only">今これ</h2>
+                        <div id="now-mode-container"></div>
+                    </section>
+
+                    <section class="journal-section" id="journal-section" aria-labelledby="journal-heading" hidden>
+                        <h2 id="journal-heading" class="sr-only">達成ジャーナル</h2>
+                        <div id="journal-container"></div>
                     </section>
                 </div>
             </div>

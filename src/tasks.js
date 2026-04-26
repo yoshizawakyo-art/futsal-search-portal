@@ -37,6 +37,7 @@ export function createTask(input)
         priority: input.priority || PRIORITY.MEDIUM,
         tags: Array.isArray(input.tags) ? input.tags : [],
         completed: false,
+        completedAt: null,
         createdAt: now,
         updatedAt: now
     };
@@ -84,10 +85,13 @@ export function toggleComplete(tasks, id)
         {
             return task;
         }
+        const nowIso = new Date().toISOString();
+        const nextCompleted = !task.completed;
         return {
             ...task,
-            completed: !task.completed,
-            updatedAt: new Date().toISOString()
+            completed: nextCompleted,
+            completedAt: nextCompleted ? nowIso : null,
+            updatedAt: nowIso
         };
     });
 }
