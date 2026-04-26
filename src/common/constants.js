@@ -69,7 +69,7 @@ export const DUE_DATE_UNSET_SORT_VALUE = "9999-99-99";
  */
 export const MESSAGES =
 {
-    EMPTY_ALL: "タスクがありません。上のフォームから追加してください。",
+    EMPTY_ALL: "まだ何も書いていません。\n上の入力欄から、最初の一歩を書き込んでみましょう。",
     EMPTY_FILTERED: "条件に一致するタスクがありません。",
     CONFIRM_DELETE: "このタスクを削除しますか？",
     ERROR_TITLE_REQUIRED: "タイトルを入力してください。",

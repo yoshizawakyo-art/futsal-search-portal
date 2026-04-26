@@ -19,12 +19,20 @@ import
     setFormValues,
     resetForm,
     setSubmitLabel,
-    setCancelVisible
+    setCancelVisible,
+    updatePriorityButtons,
+    openFormDetails,
+    closeFormDetails,
+    updateProgress,
+    updateDateDisplay,
+    updateFilterChips,
+    showCompletionEffect
 } from "./ui.js";
 import
 {
     STATUS_FILTER,
-    MESSAGES
+    MESSAGES,
+    PRIORITY
 } from "./common/constants.js";
 
 /**
@@ -38,7 +46,7 @@ const state =
     filters:
     {
         query: "",
-        status: STATUS_FILTER.ALL
+        status: STATUS_FILTER.ACTIVE
     }
 };
 
@@ -54,10 +62,12 @@ export function init()
     const form = document.getElementById("task-form");
     const list = document.getElementById("task-list");
     const searchInput = document.getElementById("search-input");
-    const statusSelect = document.getElementById("status-filter");
     const cancelBtn = document.getElementById("cancel-edit");
     const submitBtn = form.querySelector('button[type="submit"]');
     const errorBox = document.getElementById("form-error");
+    const titleInput = document.getElementById("title-input");
+
+    updateDateDisplay();
 
     form.addEventListener("submit", function onSubmit(event)
     {
@@ -77,13 +87,146 @@ export function init()
         refresh(list);
     });
 
-    statusSelect.addEventListener("change", function onStatusChange(event)
+    titleInput.addEventListener("focus", function onTitleFocus()
     {
-        state.filters.status = event.target.value;
-        refresh(list);
+        openFormDetails();
     });
 
+    setupFilterChips(list);
+    setupPriorityButtons(form);
+    setupDueChips(form);
+    setupNavigation(list);
+
     refresh(list);
+}
+
+/**
+ * フィルターチップのイベント設定。
+ *
+ * @param {HTMLElement} list タスクリストコンテナ。
+ * @returns {void}
+ */
+function setupFilterChips(list)
+{
+    const chips = document.querySelectorAll(".filter-chip");
+    chips.forEach(function(chip)
+    {
+        chip.addEventListener("click", function onChipClick()
+        {
+            state.filters.status = chip.dataset.status;
+            updateFilterChips(state.filters.status);
+            refresh(list);
+        });
+    });
+}
+
+/**
+ * 優先度ボタンのイベント設定。
+ *
+ * @param {HTMLFormElement} form フォーム要素。
+ * @returns {void}
+ */
+function setupPriorityButtons(form)
+{
+    const buttons = document.querySelectorAll(".star-btn");
+    const hiddenInput = document.getElementById("priority-select");
+
+    buttons.forEach(function(btn)
+    {
+        btn.addEventListener("click", function onPriorityClick(event)
+        {
+            event.preventDefault();
+            const priority = btn.dataset.priority;
+            hiddenInput.value = priority;
+            updatePriorityButtons(priority);
+        });
+    });
+}
+
+/**
+ * 期限チップ（今日/明日）のイベント設定。
+ *
+ * @param {HTMLFormElement} form フォーム要素。
+ * @returns {void}
+ */
+function setupDueChips(form)
+{
+    const chips = document.querySelectorAll(".due-chip");
+    const dueInput = document.getElementById("due-input");
+
+    chips.forEach(function(chip)
+    {
+        chip.addEventListener("click", function onDueChipClick(event)
+        {
+            event.preventDefault();
+            const today = new Date();
+            let targetDate = new Date();
+
+            if (chip.dataset.due === "tomorrow")
+            {
+                targetDate.setDate(today.getDate() + 1);
+            }
+
+            const yyyy = targetDate.getFullYear();
+            const mm = String(targetDate.getMonth() + 1).padStart(2, "0");
+            const dd = String(targetDate.getDate()).padStart(2, "0");
+            dueInput.value = `${yyyy}-${mm}-${dd}`;
+
+            chips.forEach(function(c)
+            {
+                c.classList.remove("due-chip--active");
+            });
+            chip.classList.add("due-chip--active");
+        });
+    });
+
+    dueInput.addEventListener("change", function onDueDateChange()
+    {
+        chips.forEach(function(c)
+        {
+            c.classList.remove("due-chip--active");
+        });
+    });
+}
+
+/**
+ * サイドバーナビゲーションのイベント設定。
+ *
+ * @param {HTMLElement} list タスクリストコンテナ。
+ * @returns {void}
+ */
+function setupNavigation(list)
+{
+    const navItems = document.querySelectorAll(".nav-item");
+
+    navItems.forEach(function(item)
+    {
+        item.addEventListener("click", function onNavClick()
+        {
+            navItems.forEach(function(nav)
+            {
+                nav.classList.remove("nav-item--active");
+            });
+            item.classList.add("nav-item--active");
+
+            const view = item.dataset.view;
+            if (view === "today")
+            {
+                state.filters.status = STATUS_FILTER.ACTIVE;
+            }
+            else if (view === "completed")
+            {
+                state.filters.status = STATUS_FILTER.COMPLETED;
+            }
+            else
+            {
+                state.filters.status = STATUS_FILTER.ALL;
+            }
+
+            updateFilterChips(state.filters.status);
+            refresh(list);
+        });
+    });
 }
 
 /**
@@ -183,9 +326,17 @@ function cancelEditing(form, submitBtn, cancelBtn, errorBox)
  */
 function handleToggle(id)
 {
+    const taskBefore = state.tasks.find(function(t) { return t.id === id; });
+    const wasCompleted = taskBefore ? taskBefore.completed : false;
+
     state.tasks = toggleComplete(state.tasks, id);
     persist();
     refresh(document.getElementById("task-list"));
+
+    if (!wasCompleted)
+    {
+        showCompletionEffect(id);
+    }
 }
 
 /**
@@ -240,4 +391,7 @@ function refresh(list)
         onEdit: startEditing,
         onDelete: handleDelete
     });
+
+    const completed = state.tasks.filter(function(t) { return t.completed; }).length;
+    updateProgress(completed, state.tasks.length);
 }

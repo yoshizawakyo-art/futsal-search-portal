@@ -6,9 +6,74 @@
 import
 {
     PRIORITY,
-    PRIORITY_LABEL,
     MESSAGES
 } from "./common/constants.js";
+
+/**
+ * タグの色パターン。タグ名のハッシュから色を決定する。
+ */
+const TAG_COLORS = ["blue", "green", "pink", "orange", "purple"];
+
+/**
+ * 優先度に応じた星表示。
+ */
+const PRIORITY_STARS =
+{
+    [PRIORITY.HIGH]: "★★★",
+    [PRIORITY.MEDIUM]: "★☆☆",
+    [PRIORITY.LOW]: "☆☆☆"
+};
+
+/**
+ * タグ名から色クラスを決定する（ハッシュベース）。
+ *
+ * @param {string} tagName タグ名。
+ * @returns {string} 色クラス名（blue, green, pink, orange, purple）。
+ */
+function getTagColor(tagName)
+{
+    let hash = 0;
+    for (let i = 0; i < tagName.length; i++)
+    {
+        hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+/**
+ * 期限日をフォーマットする。
+ *
+ * @param {string} dueDate ISO形式の日付文字列。
+ * @returns {{text: string, isOverdue: boolean}} 表示テキストと期限切れフラグ。
+ */
+function formatDueDate(dueDate)
+{
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate + "T00:00:00");
+    const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0)
+    {
+        return { text: `${Math.abs(diffDays)}日前`, isOverdue: true };
+    }
+    if (diffDays === 0)
+    {
+        return { text: "今日", isOverdue: false };
+    }
+    if (diffDays === 1)
+    {
+        return { text: "明日", isOverdue: false };
+    }
+    if (diffDays <= 7)
+    {
+        return { text: `${diffDays}日後`, isOverdue: false };
+    }
+
+    const month = due.getMonth() + 1;
+    const day = due.getDate();
+    return { text: `${month}/${day}`, isOverdue: false };
+}
 
 /**
  * タスクリストを描画する。既存の子ノードは全て置き換える。
@@ -111,22 +176,16 @@ function createMainArea(task)
     const meta = document.createElement("div");
     meta.className = "task-meta";
 
-    if (task.dueDate)
-    {
-        const due = document.createElement("span");
-        due.className = "task-due";
-        due.textContent = `期限: ${task.dueDate}`;
-        meta.appendChild(due);
-    }
-
-    meta.appendChild(createPriorityBadge(task.priority));
+    meta.appendChild(createPriorityStars(task.priority));
 
     for (const tag of task.tags)
     {
-        const chip = document.createElement("span");
-        chip.className = "task-tag";
-        chip.textContent = `#${tag}`;
-        meta.appendChild(chip);
+        meta.appendChild(createTagChip(tag));
+    }
+
+    if (task.dueDate)
+    {
+        meta.appendChild(createDueBadge(task.dueDate));
     }
 
     main.appendChild(meta);
@@ -134,17 +193,52 @@ function createMainArea(task)
 }
 
 /**
- * 優先度バッジを生成する。
+ * 優先度を星で表示する。
  *
  * @param {string} priority PRIORITY の値。
- * @returns {HTMLElement} バッジ要素。
+ * @returns {HTMLElement} 星バッジ要素。
  */
-function createPriorityBadge(priority)
+function createPriorityStars(priority)
 {
     const badge = document.createElement("span");
     const safePriority = Object.values(PRIORITY).includes(priority) ? priority : PRIORITY.MEDIUM;
-    badge.className = `task-priority task-priority--${safePriority}`;
-    badge.textContent = `優先度: ${PRIORITY_LABEL[safePriority]}`;
+    badge.className = "task-priority";
+    badge.textContent = PRIORITY_STARS[safePriority];
+    badge.title = `優先度: ${safePriority === PRIORITY.HIGH ? "高" : safePriority === PRIORITY.MEDIUM ? "中" : "低"}`;
+    return badge;
+}
+
+/**
+ * タグチップを生成する（カラフル）。
+ *
+ * @param {string} tagName タグ名。
+ * @returns {HTMLElement} タグチップ要素。
+ */
+function createTagChip(tagName)
+{
+    const chip = document.createElement("span");
+    const color = getTagColor(tagName);
+    chip.className = `task-tag task-tag--${color}`;
+    chip.textContent = tagName;
+    return chip;
+}
+
+/**
+ * 期限バッジを生成する。
+ *
+ * @param {string} dueDate ISO形式の日付文字列。
+ * @returns {HTMLElement} 期限バッジ要素。
+ */
+function createDueBadge(dueDate)
+{
+    const { text, isOverdue } = formatDueDate(dueDate);
+    const badge = document.createElement("span");
+    badge.className = "task-due";
+    if (isOverdue)
+    {
+        badge.classList.add("task-due--overdue");
+    }
+    badge.textContent = text;
     return badge;
 }
 
@@ -213,6 +307,9 @@ export function setFormValues(form, task)
     form.elements.namedItem("dueDate").value = task.dueDate || "";
     form.elements.namedItem("priority").value = task.priority;
     form.elements.namedItem("tags").value = task.tags.join(", ");
+
+    updatePriorityButtons(task.priority);
+    openFormDetails();
 }
 
 /**
@@ -225,6 +322,8 @@ export function resetForm(form)
 {
     form.reset();
     form.elements.namedItem("priority").value = PRIORITY.MEDIUM;
+    updatePriorityButtons(PRIORITY.MEDIUM);
+    closeFormDetails();
 }
 
 /**
@@ -236,7 +335,7 @@ export function resetForm(form)
  */
 export function setSubmitLabel(submitButton, isEditing)
 {
-    submitButton.textContent = isEditing ? "更新" : "追加";
+    submitButton.textContent = isEditing ? "更新する" : "手帳に書き込む";
 }
 
 /**
@@ -249,4 +348,152 @@ export function setSubmitLabel(submitButton, isEditing)
 export function setCancelVisible(cancelButton, visible)
 {
     cancelButton.hidden = !visible;
+}
+
+/**
+ * 優先度ボタンのアクティブ状態を更新する。
+ *
+ * @param {string} priority 選択された優先度。
+ * @returns {void}
+ */
+export function updatePriorityButtons(priority)
+{
+    const buttons = document.querySelectorAll(".star-btn");
+    buttons.forEach(function(btn)
+    {
+        btn.classList.toggle("star-btn--active", btn.dataset.priority === priority);
+    });
+}
+
+/**
+ * フォーム詳細部分を開く。
+ *
+ * @returns {void}
+ */
+export function openFormDetails()
+{
+    const details = document.getElementById("form-details");
+    if (details)
+    {
+        details.classList.add("is-open");
+    }
+}
+
+/**
+ * フォーム詳細部分を閉じる。
+ *
+ * @returns {void}
+ */
+export function closeFormDetails()
+{
+    const details = document.getElementById("form-details");
+    if (details)
+    {
+        details.classList.remove("is-open");
+    }
+}
+
+/**
+ * サイドバーの進捗表示を更新する。
+ *
+ * @param {number} completed 完了タスク数。
+ * @param {number} total 全タスク数。
+ * @returns {void}
+ */
+export function updateProgress(completed, total)
+{
+    const completedEl = document.getElementById("completed-count");
+    const totalEl = document.getElementById("total-count");
+    const fillEl = document.getElementById("progress-fill");
+    const messageEl = document.getElementById("progress-message");
+
+    if (completedEl) completedEl.textContent = completed;
+    if (totalEl) totalEl.textContent = total;
+
+    const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    if (fillEl) fillEl.style.width = `${percent}%`;
+
+    if (messageEl)
+    {
+        if (total === 0)
+        {
+            messageEl.textContent = "タスクを追加しよう!";
+        }
+        else if (completed === total)
+        {
+            messageEl.textContent = "All done! Great job!";
+        }
+        else if (percent >= 70)
+        {
+            messageEl.textContent = "Almost there!";
+        }
+        else if (percent >= 30)
+        {
+            messageEl.textContent = "keep going!";
+        }
+        else
+        {
+            messageEl.textContent = "Let's get started!";
+        }
+    }
+
+    const todayDoneEl = document.getElementById("today-done");
+    const todayTotalEl = document.getElementById("today-total");
+    if (todayDoneEl) todayDoneEl.textContent = completed;
+    if (todayTotalEl) todayTotalEl.textContent = total;
+}
+
+/**
+ * ヘッダーの日付表示を更新する。
+ *
+ * @returns {void}
+ */
+export function updateDateDisplay()
+{
+    const now = new Date();
+    const weekdays = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+
+    const weekdayEl = document.getElementById("weekday-text");
+    const monthEl = document.getElementById("month-text");
+    const dayEl = document.getElementById("day-text");
+    const yearEl = document.getElementById("year-text");
+
+    if (weekdayEl) weekdayEl.textContent = weekdays[now.getDay()];
+    if (monthEl) monthEl.textContent = `${now.getMonth() + 1}月`;
+    if (dayEl) dayEl.textContent = now.getDate();
+    if (yearEl) yearEl.textContent = `'${String(now.getFullYear()).slice(-2)}`;
+}
+
+/**
+ * フィルターチップのアクティブ状態を更新する。
+ *
+ * @param {string} status 選択されたステータス。
+ * @returns {void}
+ */
+export function updateFilterChips(status)
+{
+    const chips = document.querySelectorAll(".filter-chip");
+    chips.forEach(function(chip)
+    {
+        chip.classList.toggle("filter-chip--active", chip.dataset.status === status);
+    });
+}
+
+/**
+ * 完了時のFINISHED!演出を表示する。
+ *
+ * @param {string} taskId 完了したタスクのID。
+ * @returns {void}
+ */
+export function showCompletionEffect(taskId)
+{
+    const row = document.querySelector(`[data-task-id="${taskId}"]`);
+    if (row && row.classList.contains("task-row--completed"))
+    {
+        row.classList.add("just-completed");
+        setTimeout(function()
+        {
+            row.classList.remove("just-completed");
+        }, 1500);
+    }
 }
