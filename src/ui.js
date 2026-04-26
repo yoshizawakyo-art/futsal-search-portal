@@ -6,7 +6,9 @@
 import
 {
     PRIORITY,
-    MESSAGES
+    PRIORITY_LABEL,
+    MESSAGES,
+    VIEW
 } from "./common/constants.js";
 
 /**
@@ -496,4 +498,278 @@ export function showCompletionEffect(taskId)
             row.classList.remove("just-completed");
         }, 1500);
     }
+}
+
+/**
+ * メインビューを切り替える（リスト / 今これ / 達成）。
+ * 各セクションの hidden 属性で表示制御し、サイドバーのアクティブ状態も更新する。
+ *
+ * @param {string} view VIEW 定数の値。
+ * @returns {void}
+ */
+export function showView(view)
+{
+    const filterSection = document.querySelector(".task-filter-section");
+    const listSection = document.getElementById("task-list-section");
+    const nowSection = document.getElementById("now-mode-section");
+    const journalSection = document.getElementById("journal-section");
+
+    const isList = view === VIEW.TODAY || view === VIEW.ALL || view === VIEW.COMPLETED;
+    if (filterSection) filterSection.hidden = !isList;
+    if (listSection) listSection.hidden = !isList;
+    if (nowSection) nowSection.hidden = view !== VIEW.NOW;
+    if (journalSection) journalSection.hidden = view !== VIEW.JOURNAL;
+
+    document.querySelectorAll(".nav-item").forEach(function(item)
+    {
+        item.classList.toggle("nav-item--active", item.dataset.view === view);
+    });
+}
+
+/**
+ * 自然言語パース結果のチッププレビューを描画する。
+ * 抽出が無ければ領域ごと隠す。
+ *
+ * @param {HTMLElement} container プレビュー領域。
+ * @param {{title: string, dueDate: string|null, tags: string[], priority: string|null}} parsed パース結果。
+ * @returns {void}
+ */
+export function renderInputPreview(container, parsed)
+{
+    container.replaceChildren();
+    const hasAny = Boolean(parsed.dueDate) || parsed.tags.length > 0 || Boolean(parsed.priority);
+    if (!hasAny)
+    {
+        container.hidden = true;
+        return;
+    }
+    container.hidden = false;
+
+    const label = document.createElement("span");
+    label.className = "preview-label";
+    label.textContent = "解析:";
+    container.appendChild(label);
+
+    if (parsed.dueDate)
+    {
+        const chip = document.createElement("span");
+        chip.className = "preview-chip preview-chip--due";
+        const formatted = formatDueDate(parsed.dueDate);
+        chip.textContent = `期日: ${formatted.text} (${parsed.dueDate})`;
+        container.appendChild(chip);
+    }
+
+    for (const tag of parsed.tags)
+    {
+        const chip = document.createElement("span");
+        chip.className = "preview-chip preview-chip--tag";
+        chip.textContent = `#${tag}`;
+        container.appendChild(chip);
+    }
+
+    if (parsed.priority)
+    {
+        const chip = document.createElement("span");
+        chip.className = "preview-chip preview-chip--priority";
+        chip.textContent = `優先度: ${PRIORITY_LABEL[parsed.priority] || parsed.priority}`;
+        container.appendChild(chip);
+    }
+}
+
+/**
+ * 「今これ」モードのカードを描画する。候補が無ければ空メッセージ。
+ *
+ * @param {HTMLElement} container 描画先。
+ * @param {object|null} task 推薦されたタスク。
+ * @param {{onComplete: Function, onSkip: Function, onEdit: Function}} handlers 各種ハンドラ。
+ * @returns {void}
+ */
+export function renderNowMode(container, task, handlers)
+{
+    container.replaceChildren();
+    if (!task)
+    {
+        const p = document.createElement("p");
+        p.className = "now-empty";
+        p.textContent = MESSAGES.NOW_EMPTY;
+        container.appendChild(p);
+        return;
+    }
+
+    const card = document.createElement("article");
+    card.className = "now-card";
+    card.dataset.taskId = task.id;
+
+    const label = document.createElement("p");
+    label.className = "now-card-label";
+    label.textContent = "now this —";
+    card.appendChild(label);
+
+    const title = document.createElement("h3");
+    title.className = "now-card-title";
+    title.textContent = task.title;
+    card.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.className = "now-card-meta";
+    meta.appendChild(createPriorityStars(task.priority));
+    for (const tag of task.tags)
+    {
+        meta.appendChild(createTagChip(tag));
+    }
+    if (task.dueDate)
+    {
+        meta.appendChild(createDueBadge(task.dueDate));
+    }
+    card.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "now-card-actions";
+
+    const completeBtn = document.createElement("button");
+    completeBtn.type = "button";
+    completeBtn.className = "btn-primary";
+    completeBtn.textContent = "✓ 完了する";
+    completeBtn.addEventListener("click", function onCompleteClick()
+    {
+        handlers.onComplete(task.id);
+    });
+    actions.appendChild(completeBtn);
+
+    const skipBtn = document.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "btn-secondary";
+    skipBtn.textContent = "次の候補へ →";
+    skipBtn.addEventListener("click", function onSkipClick()
+    {
+        handlers.onSkip(task.id);
+    });
+    actions.appendChild(skipBtn);
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-secondary";
+    editBtn.textContent = "編集";
+    editBtn.addEventListener("click", function onEditClick()
+    {
+        handlers.onEdit(task.id);
+    });
+    actions.appendChild(editBtn);
+
+    card.appendChild(actions);
+    container.appendChild(card);
+}
+
+/**
+ * 達成ジャーナル（ヒートマップ + 日付別完了リスト）を描画する。
+ *
+ * @param {HTMLElement} container 描画先。
+ * @param {Array<{date: string, tasks: Array<object>}>} groupedDays 日付グループ配列。
+ * @param {Array<{date: string, count: number, weekday: number, isToday: boolean}>} heatmapCells ヒートマップ用セル。
+ * @returns {void}
+ */
+export function renderJournal(container, groupedDays, heatmapCells)
+{
+    container.replaceChildren();
+
+    const heatmapWrap = document.createElement("div");
+    heatmapWrap.className = "journal-heatmap";
+
+    const heatmapTitle = document.createElement("p");
+    heatmapTitle.className = "journal-heatmap-title";
+    heatmapTitle.textContent = "this month's stamps";
+    heatmapWrap.appendChild(heatmapTitle);
+
+    const grid = document.createElement("div");
+    grid.className = "heatmap-grid";
+    for (const cell of heatmapCells)
+    {
+        const div = document.createElement("div");
+        div.className = "heatmap-cell";
+        if (cell.count > 0) div.classList.add("heatmap-cell--has");
+        if (cell.count >= 2) div.classList.add("heatmap-cell--has-2");
+        if (cell.count >= 3) div.classList.add("heatmap-cell--has-3");
+        if (cell.isToday) div.classList.add("heatmap-cell--today");
+        div.title = `${cell.date}: ${cell.count}件完了`;
+        if (cell.count > 0)
+        {
+            div.textContent = String(cell.count);
+        }
+        grid.appendChild(div);
+    }
+    heatmapWrap.appendChild(grid);
+
+    const legend = document.createElement("p");
+    legend.className = "heatmap-legend";
+    legend.textContent = "数字 = その日の完了タスク数 / 点線枠 = 今日";
+    heatmapWrap.appendChild(legend);
+
+    container.appendChild(heatmapWrap);
+
+    if (groupedDays.length === 0)
+    {
+        const p = document.createElement("p");
+        p.className = "journal-empty";
+        p.textContent = MESSAGES.JOURNAL_EMPTY;
+        container.appendChild(p);
+        return;
+    }
+
+    for (const group of groupedDays)
+    {
+        const wrap = document.createElement("section");
+        wrap.className = "journal-day-group";
+
+        const heading = document.createElement("h3");
+        heading.className = "journal-day-heading";
+        heading.textContent = formatJournalDate(group.date);
+        wrap.appendChild(heading);
+
+        const list = document.createElement("ul");
+        list.className = "journal-day-list";
+        for (const task of group.tasks)
+        {
+            const li = document.createElement("li");
+            li.className = "journal-day-item";
+
+            const stamp = document.createElement("span");
+            stamp.className = "journal-stamp";
+            stamp.textContent = "✓";
+            li.appendChild(stamp);
+
+            const title = document.createElement("span");
+            title.className = "journal-day-title";
+            title.textContent = task.title;
+            li.appendChild(title);
+
+            list.appendChild(li);
+        }
+        wrap.appendChild(list);
+        container.appendChild(wrap);
+    }
+}
+
+/**
+ * ジャーナル用の日付見出し文字列を生成する。今日 / 昨日は名前で、それ以外は M/D (曜)。
+ *
+ * @param {string} ymd "YYYY-MM-DD" 形式。
+ * @returns {string} 表示用文字列。
+ */
+function formatJournalDate(ymd)
+{
+    const parts = ymd.split("-").map(function(s) { return parseInt(s, 10); });
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+
+    const today = new Date();
+    const todayYmd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yYmd = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+
+    const md = `${parts[1]}/${parts[2]}`;
+    const wd = weekdays[date.getDay()];
+    if (ymd === todayYmd) return `今日 — ${md} (${wd})`;
+    if (ymd === yYmd) return `昨日 — ${md} (${wd})`;
+    return `${md} (${wd})`;
 }
